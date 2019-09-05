@@ -1,5 +1,14 @@
-digraph  {
-    a -> b
-    b -> c
-    c -> a
+digraph {
+    compound=true;
+    node [shape=record];
+    subgraph cluster_b1 {
+        b1a -> b1b;
+    }
+    subgraph cluster_b2 {
+        b2a -> b2b;
+    }
+    a -> b;
+    b -> { b1a, b2a };
+    b1b -> c;
+    b2b -> c;
 }
