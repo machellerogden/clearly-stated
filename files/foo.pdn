@@ -1,14 +1,28 @@
 digraph {
-    compound=true;
-    node [shape=record];
-    subgraph cluster_b1 {
+
+    rankdir=TB; ratio=fill; splines=curved; edge [arrowsize=0.75 color="#333333"]; node [shape=rect color="#aaaaaa" style="dashed,rounded"];
+
+    start [shape=circle fillcolor="#ffda75" style="dashed,filled"];
+    end [shape=circle fillcolor="#ffda75" style="dashed,filled"];
+
+    subgraph cluster_p1 {
+
+        color=grey; style="dashed,rounded";
+
         b1a -> b1b;
-    }
-    subgraph cluster_b2 {
         b2a -> b2b;
     }
+
+    start -> a;
+
     a -> b;
-    b -> { b1a, b2a };
+
+    b -> b1a;
+    b -> b2a;
+
     b1b -> c;
     b2b -> c;
+
+    c -> end;
+
 }
