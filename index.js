@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const readdirp = require('readdirp');
 const dirTree = require('directory-tree');
+const { readOne } = require('dottle');
 
 const express = require('express');
 const app = express();
@@ -49,8 +50,8 @@ watcher.on('ready', () => {
 
 app.get('/preview/*', (req, res) => {
     const f = req.params[0] || '';
-    fs.readFile(f, 'utf8', (err, dots) => {
-        res.send(preview(dots));
+    fs.readFile(f, 'utf8', async (err, dots) => {
+        res.send(preview(await readOne(dots)));
     });
 });
 
