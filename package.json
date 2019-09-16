@@ -23,7 +23,7 @@
     "chokidar": "^2.0.4",
     "cors": "^2.8.4",
     "directory-tree": "^2.2.1",
-    "dottle": "0.0.1",
+    "dottle": "0.1.0",
     "express": "^4.16.3",
     "readdirp": "^2.2.1",
     "require-dir": "^1.1.0"
