@@ -1,0 +1,1109 @@
+{
+  "StartAt": "transaction-status-started-1",
+  "States": {
+    "transaction-status-started-1": {
+      "Type": "Task",
+      "Resource": "arn:aws:lambda:us-east-1:609131769936:function:transaction-dev-update_transaction",
+      "Parameters": {
+        "id.$": "$.transaction-id",
+        "status": "started",
+        "message": "voe-voi"
+      },
+      "ResultPath": "$.status-update",
+      "Next": "on-transaction-started"
+    },
+    "transaction-status-fail-3": {
+      "Type": "Fail",
+      "Cause": "error"
+    },
+    "Wait 5 seconds for credit scores": {
+      "Type": "Wait",
+      "Seconds": 5,
+      "Next": "can-run-verification"
+    },
+    "can-we-run-verification-choice": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.can-run-verification",
+          "BooleanEquals": true,
+          "Next": "on-borrower-verification-waterfall"
+        }
+      ],
+      "Default": "Wait 5 seconds for credit scores"
+    },
+    "transaction-status-in-progress-7": {
+      "Type": "Task",
+      "Resource": "arn:aws:lambda:us-east-1:609131769936:function:transaction-dev-update_transaction",
+      "Parameters": {
+        "id.$": "$.transaction-id",
+        "status": "in-progress",
+        "message": "lock-status",
+        "data": {
+          "loan-has-multiple-applications": true
+        }
+      },
+      "ResultPath": "$.status-update",
+      "End": true
+    },
+    "on-update-encompass-twn-flag-error": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::sns:publish",
+      "Parameters": {
+        "TopicArn": "arn:aws:sns:us-east-1:609131769936:event-horizon-client-dev",
+        "Message": {
+          "Input": {
+            "app": "verification-api",
+            "device-id.$": "$.transaction-id",
+            "loan-number.$": "$.input.loan-id",
+            "event": "update-encompass-twn-flag-error",
+            "data": {
+              "error.$": "$.error-info.Error",
+              "cause.$": "$.error-info.Cause"
+            }
+          }
+        }
+      },
+      "ResultPath": "$.event-horizon-result",
+      "Next": "transaction-status-done-17"
+    },
+    "can-run-verification": {
+      "Type": "Task",
+      "Resource": "arn:aws:lambda:us-east-1:609131769936:function:verification-api-dev-can_run_verification",
+      "Parameters": {
+        "loan-id.$": "$.input.loan-id",
+        "borrowers.$": "$.input.borrowers",
+        "force.$": "$.input.force"
+      },
+      "ResultPath": "$.can-run-verification",
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "ResultPath": "$.error-info",
+          "Next": "on-can-run-verification-error"
+        }
+      ],
+      "Next": "on-can-run-verification-choice"
+    },
+    "transaction-status-in-progress-14": {
+      "Type": "Task",
+      "Resource": "arn:aws:lambda:us-east-1:609131769936:function:transaction-dev-update_transaction",
+      "Parameters": {
+        "id.$": "$.transaction-id",
+        "status": "in-progress",
+        "message": "twn-orders-success",
+        "data": {
+          "work-number": {
+            "ids.$": "$.verification-orders.*.twn-order.order-id"
+          }
+        }
+      },
+      "ResultPath": "$.status-update",
+      "Next": "on-twn-orders-success"
+    },
+    "on-loan-is-locked-choice": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::sns:publish",
+      "Parameters": {
+        "TopicArn": "arn:aws:sns:us-east-1:609131769936:event-horizon-client-dev",
+        "Message": {
+          "Input": {
+            "app": "verification-api",
+            "device-id.$": "$.transaction-id",
+            "loan-number.$": "$.input.loan-id",
+            "event": "loan-is-locked-choice",
+            "data": {
+              "loan-is-locked.$": "$.loan-is-locked"
+            }
+          }
+        }
+      },
+      "ResultPath": "$.event-horizon-result",
+      "Next": "loan-is-locked-choice"
+    },
+    "select-results-from-parallel": {
+      "Type": "Pass",
+      "Parameters": {
+        "transaction-id.$": "$[0].transaction-id",
+        "input.$": "$[0].input"
+      },
+      "Next": "transaction-status-done-25"
+    },
+    "done": {
+      "Type": "Succeed"
+    },
+    "persist-results": {
+      "Type": "Parallel",
+      "Branches": [
+        {
+          "StartAt": "update-encompass-fields",
+          "States": {
+            "update-encompass-fields": {
+              "Type": "Task",
+              "Resource": "arn:aws:lambda:us-east-1:609131769936:function:verification-api-dev-write_encompass_employment",
+              "Parameters": {
+                "orders.$": "$.verification-orders.*.twn-order",
+                "loan-id.$": "$.input.loan-id"
+              },
+              "ResultPath": "$.update-encompass-results",
+              "Catch": [
+                {
+                  "ErrorEquals": [
+                    "States.ALL"
+                  ],
+                  "ResultPath": "$.error-info",
+                  "Next": "on-update-encompass-error"
+                }
+              ],
+              "Next": "transaction-status-in-progress-21"
+            },
+            "transaction-status-in-progress-21": {
+              "Type": "Task",
+              "Resource": "arn:aws:lambda:us-east-1:609131769936:function:transaction-dev-update_transaction",
+              "Parameters": {
+                "id.$": "$.transaction-id",
+                "status": "in-progress",
+                "message": "update-encompass-complete"
+              },
+              "ResultPath": "$.status-update",
+              "Next": "on-update-encompass-complete"
+            },
+            "on-update-encompass-complete": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::sns:publish",
+              "Parameters": {
+                "TopicArn": "arn:aws:sns:us-east-1:609131769936:event-horizon-client-dev",
+                "Message": {
+                  "Input": {
+                    "app": "verification-api",
+                    "device-id.$": "$.transaction-id",
+                    "loan-number.$": "$.input.loan-id",
+                    "event": "update-encompass-fields",
+                    "data": {
+                      "status.$": "$.update-encompass-results.status"
+                    }
+                  }
+                }
+              },
+              "ResultPath": "$.event-horizon-result",
+              "End": true
+            },
+            "on-update-encompass-error": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::sns:publish",
+              "Parameters": {
+                "TopicArn": "arn:aws:sns:us-east-1:609131769936:event-horizon-client-dev",
+                "Message": {
+                  "Input": {
+                    "app": "verification-api",
+                    "device-id.$": "$.transaction-id",
+                    "loan-number.$": "$.input.loan-id",
+                    "event": "update-encompass-error",
+                    "data": {
+                      "error.$": "$.error-info.Error",
+                      "cause.$": "$.error-info.Cause"
+                    }
+                  }
+                }
+              },
+              "ResultPath": "$.event-horizon-result",
+              "Next": "transaction-status-done-19"
+            },
+            "transaction-status-done-19": {
+              "Type": "Task",
+              "Resource": "arn:aws:lambda:us-east-1:609131769936:function:transaction-dev-update_transaction",
+              "Parameters": {
+                "id.$": "$.transaction-id",
+                "status": "done",
+                "message": "update-encompass-error"
+              },
+              "ResultPath": "$.status-update",
+              "Next": "transaction-status-fail-20"
+            },
+            "transaction-status-fail-20": {
+              "Type": "Fail",
+              "Cause": "error"
+            }
+          }
+        },
+        {
+          "StartAt": "s3-to-docmgmt",
+          "States": {
+            "s3-to-docmgmt": {
+              "Type": "Task",
+              "Resource": "arn:aws:lambda:us-east-1:609131769936:function:verification-api-dev-s3_to_docmgmt",
+              "Parameters": {
+                "loan-id.$": "$.input.loan-id",
+                "documents.$": "$.verification-orders.*.twn-order.documents"
+              },
+              "ResultPath": "$.file-upload-results",
+              "Retry": [
+                {
+                  "ErrorEquals": [
+                    "States.ALL"
+                  ],
+                  "IntervalSeconds": 1,
+                  "MaxAttempts": 3,
+                  "BackoffRate": 2
+                }
+              ],
+              "Catch": [
+                {
+                  "ErrorEquals": [
+                    "States.ALL"
+                  ],
+                  "ResultPath": "$.error-info",
+                  "Next": "on-file-upload-error"
+                }
+              ],
+              "Next": "transaction-status-in-progress-24"
+            },
+            "transaction-status-in-progress-24": {
+              "Type": "Task",
+              "Resource": "arn:aws:lambda:us-east-1:609131769936:function:transaction-dev-update_transaction",
+              "Parameters": {
+                "id.$": "$.transaction-id",
+                "status": "in-progress",
+                "message": "file-upload-success"
+              },
+              "ResultPath": "$.status-update",
+              "Next": "on-file-upload-success"
+            },
+            "on-file-upload-success": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::sns:publish",
+              "Parameters": {
+                "TopicArn": "arn:aws:sns:us-east-1:609131769936:event-horizon-client-dev",
+                "Message": {
+                  "Input": {
+                    "app": "verification-api",
+                    "device-id.$": "$.transaction-id",
+                    "loan-number.$": "$.input.loan-id",
+                    "event": "twn-orders-file-upload",
+                    "data": {
+                      "status.$": "$.file-upload-results.status"
+                    }
+                  }
+                }
+              },
+              "ResultPath": "$.event-horizon-result",
+              "End": true
+            },
+            "on-file-upload-error": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::sns:publish",
+              "Parameters": {
+                "TopicArn": "arn:aws:sns:us-east-1:609131769936:event-horizon-client-dev",
+                "Message": {
+                  "Input": {
+                    "app": "verification-api",
+                    "device-id.$": "$.transaction-id",
+                    "loan-number.$": "$.input.loan-id",
+                    "event": "file-upload-error",
+                    "data": {
+                      "error.$": "$.error-info.Error",
+                      "cause.$": "$.error-info.Cause"
+                    }
+                  }
+                }
+              },
+              "ResultPath": "$.event-horizon-result",
+              "Next": "transaction-status-done-22"
+            },
+            "transaction-status-done-22": {
+              "Type": "Task",
+              "Resource": "arn:aws:lambda:us-east-1:609131769936:function:transaction-dev-update_transaction",
+              "Parameters": {
+                "id.$": "$.transaction-id",
+                "status": "done",
+                "message": "file-upload-error"
+              },
+              "ResultPath": "$.status-update",
+              "Next": "transaction-status-fail-23"
+            },
+            "transaction-status-fail-23": {
+              "Type": "Fail",
+              "Cause": "error"
+            }
+          }
+        }
+      ],
+      "Next": "select-results-from-parallel"
+    },
+    "loan-has-multiple-applications-choice": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.loan-has-multiple-applications",
+          "BooleanEquals": true,
+          "Next": "confirmed-multiple-applications"
+        }
+      ],
+      "Default": "confirmed-single-application"
+    },
+    "on-can-run-verification-error": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::sns:publish",
+      "Parameters": {
+        "TopicArn": "arn:aws:sns:us-east-1:609131769936:event-horizon-client-dev",
+        "Message": {
+          "Input": {
+            "app": "verification-api",
+            "device-id.$": "$.transaction-id",
+            "loan-number.$": "$.input.loan-id",
+            "event": "can-run-verification-error",
+            "data": {
+              "error.$": "$.error-info.Error",
+              "cause.$": "$.error-info.Cause"
+            }
+          }
+        }
+      },
+      "ResultPath": "$.event-horizon-result",
+      "Next": "transaction-status-done-8"
+    },
+    "confirmed-multiple-applications": {
+      "Type": "Pass",
+      "Next": "transaction-status-in-progress-7"
+    },
+    "on-loan-is-locked-error": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::sns:publish",
+      "Parameters": {
+        "TopicArn": "arn:aws:sns:us-east-1:609131769936:event-horizon-client-dev",
+        "Message": {
+          "Input": {
+            "app": "verification-api",
+            "device-id.$": "$.transaction-id",
+            "loan-number.$": "$.input.loan-id",
+            "event": "loan-is-locked-error",
+            "data": {
+              "error.$": "$.error-info.Error",
+              "cause.$": "$.error-info.Cause"
+            }
+          }
+        }
+      },
+      "ResultPath": "$.event-horizon-result",
+      "Next": "transaction-status-done-2"
+    },
+    "transaction-status-in-progress-4": {
+      "Type": "Task",
+      "Resource": "arn:aws:lambda:us-east-1:609131769936:function:transaction-dev-update_transaction",
+      "Parameters": {
+        "id.$": "$.transaction-id",
+        "status": "in-progress",
+        "message": "lock-status",
+        "data": {
+          "loan-is-locked": true
+        }
+      },
+      "ResultPath": "$.status-update",
+      "End": true
+    },
+    "on-update-encompass-twn-flag": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::sns:publish",
+      "Parameters": {
+        "TopicArn": "arn:aws:sns:us-east-1:609131769936:event-horizon-client-dev",
+        "Message": {
+          "Input": {
+            "app": "verification-api",
+            "device-id.$": "$.transaction-id",
+            "loan-number.$": "$.input.loan-id",
+            "event": "update-encompass-twn-flag"
+          }
+        }
+      },
+      "ResultPath": "$.event-horizon-result",
+      "Next": "persist-results"
+    },
+    "transaction-status-fail-6": {
+      "Type": "Fail",
+      "Cause": "error"
+    },
+    "loan-is-locked": {
+      "Type": "Task",
+      "Resource": "arn:aws:lambda:us-east-1:609131769936:function:verification-api-dev-loan_is_locked",
+      "Parameters": {
+        "loan-id.$": "$.input.loan-id"
+      },
+      "ResultPath": "$.loan-is-locked",
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "ResultPath": "$.error-info",
+          "Next": "on-loan-is-locked-error"
+        }
+      ],
+      "Next": "on-loan-is-locked-choice"
+    },
+    "transaction-status-fail-18": {
+      "Type": "Fail",
+      "Cause": "error"
+    },
+    "on-can-run-encompass-update-error": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::sns:publish",
+      "Parameters": {
+        "TopicArn": "arn:aws:sns:us-east-1:609131769936:event-horizon-client-dev",
+        "Message": {
+          "Input": {
+            "app": "verification-api",
+            "device-id.$": "$.transaction-id",
+            "loan-number.$": "$.input.loan-id",
+            "event": "can-run-encompass-update-error",
+            "data": {
+              "error.$": "$.error-info.Error",
+              "cause.$": "$.error-info.Cause"
+            }
+          }
+        }
+      },
+      "ResultPath": "$.event-horizon-result",
+      "Next": "transaction-status-done-15"
+    },
+    "on-can-run-verification-choice": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::sns:publish",
+      "Parameters": {
+        "TopicArn": "arn:aws:sns:us-east-1:609131769936:event-horizon-client-dev",
+        "Message": {
+          "Input": {
+            "app": "verification-api",
+            "device-id.$": "$.transaction-id",
+            "loan-number.$": "$.input.loan-id",
+            "event": "can-run-verification-choice",
+            "data": {
+              "can-run-verification.$": "$.can-run-verification"
+            }
+          }
+        }
+      },
+      "ResultPath": "$.event-horizon-result",
+      "Next": "can-we-run-verification-choice"
+    },
+    "transaction-status-fail-16": {
+      "Type": "Fail",
+      "Cause": "error"
+    },
+    "on-twn-orders-success": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::sns:publish",
+      "Parameters": {
+        "TopicArn": "arn:aws:sns:us-east-1:609131769936:event-horizon-client-dev",
+        "Message": {
+          "Input": {
+            "app": "verification-api",
+            "device-id.$": "$.transaction-id",
+            "loan-number.$": "$.input.loan-id",
+            "event": "twn-orders-success",
+            "data": {
+              "order-ids.$": "$.verification-orders.*.twn-order.order-id"
+            }
+          }
+        }
+      },
+      "ResultPath": "$.event-horizon-result",
+      "Next": "can-run-encompass-update"
+    },
+    "confirmed-single-application": {
+      "Type": "Pass",
+      "Next": "can-run-verification"
+    },
+    "on-can-run-encompass-update-choice": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::sns:publish",
+      "Parameters": {
+        "TopicArn": "arn:aws:sns:us-east-1:609131769936:event-horizon-client-dev",
+        "Message": {
+          "Input": {
+            "app": "verification-api",
+            "device-id.$": "$.transaction-id",
+            "loan-number.$": "$.input.loan-id",
+            "event": "can-run-encompass-update-choice",
+            "data": {
+              "can-run-encompass-update.$": "$.can-run-encompass-update"
+            }
+          }
+        }
+      },
+      "ResultPath": "$.event-horizon-result",
+      "Next": "can-we-run-encompass-update-choice"
+    },
+    "transaction-status-done-15": {
+      "Type": "Task",
+      "Resource": "arn:aws:lambda:us-east-1:609131769936:function:transaction-dev-update_transaction",
+      "Parameters": {
+        "id.$": "$.transaction-id",
+        "status": "done",
+        "message": "can-run-encompass-update-error"
+      },
+      "ResultPath": "$.status-update",
+      "Next": "transaction-status-fail-16"
+    },
+    "can-we-run-encompass-update-choice": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.can-run-encompass-update",
+          "BooleanEquals": true,
+          "Next": "update-encompass-twn-flag"
+        }
+      ],
+      "Default": "Wait 5 seconds for encompass sync"
+    },
+    "transaction-status-done-8": {
+      "Type": "Task",
+      "Resource": "arn:aws:lambda:us-east-1:609131769936:function:transaction-dev-update_transaction",
+      "Parameters": {
+        "id.$": "$.transaction-id",
+        "status": "done",
+        "message": "can-run-verification-error"
+      },
+      "ResultPath": "$.status-update",
+      "Next": "transaction-status-fail-9"
+    },
+    "Wait 5 seconds for encompass sync": {
+      "Type": "Wait",
+      "Seconds": 5,
+      "Next": "can-run-encompass-update"
+    },
+    "transaction-status-fail-9": {
+      "Type": "Fail",
+      "Cause": "error"
+    },
+    "loan-is-locked-choice": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.loan-is-locked",
+          "BooleanEquals": true,
+          "Next": "confirmed-locked-loan"
+        }
+      ],
+      "Default": "confirmed-unlocked-loan"
+    },
+    "transaction-status-done-17": {
+      "Type": "Task",
+      "Resource": "arn:aws:lambda:us-east-1:609131769936:function:transaction-dev-update_transaction",
+      "Parameters": {
+        "id.$": "$.transaction-id",
+        "status": "done",
+        "message": "update-encompass-twn-flag-error"
+      },
+      "ResultPath": "$.status-update",
+      "Next": "transaction-status-fail-18"
+    },
+    "transaction-status-done-2": {
+      "Type": "Task",
+      "Resource": "arn:aws:lambda:us-east-1:609131769936:function:transaction-dev-update_transaction",
+      "Parameters": {
+        "id.$": "$.transaction-id",
+        "status": "done",
+        "message": "loan-is-locked-error"
+      },
+      "ResultPath": "$.status-update",
+      "Next": "transaction-status-fail-3"
+    },
+    "update-encompass-twn-flag": {
+      "Type": "Task",
+      "Resource": "arn:aws:lambda:us-east-1:609131769936:function:verification-api-dev-write_encompass_twn_flag",
+      "Parameters": {
+        "loan-id.$": "$.input.loan-id"
+      },
+      "ResultPath": "$.update-encompass-twn-flag-results",
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "ResultPath": "$.error-info",
+          "Next": "on-update-encompass-twn-flag-error"
+        }
+      ],
+      "Next": "on-update-encompass-twn-flag"
+    },
+    "on-transaction-success": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::sns:publish",
+      "Parameters": {
+        "TopicArn": "arn:aws:sns:us-east-1:609131769936:event-horizon-client-dev",
+        "Message": {
+          "Input": {
+            "app": "verification-api",
+            "device-id.$": "$.transaction-id",
+            "loan-number.$": "$.input.loan-id",
+            "event": "transaction-success"
+          }
+        }
+      },
+      "ResultPath": "$.event-horizon-result",
+      "Next": "done"
+    },
+    "transaction-status-done-25": {
+      "Type": "Task",
+      "Resource": "arn:aws:lambda:us-east-1:609131769936:function:transaction-dev-update_transaction",
+      "Parameters": {
+        "id.$": "$.transaction-id",
+        "status": "done",
+        "message": "success"
+      },
+      "ResultPath": "$.status-update",
+      "Next": "on-transaction-success"
+    },
+    "transaction-status-done-5": {
+      "Type": "Task",
+      "Resource": "arn:aws:lambda:us-east-1:609131769936:function:transaction-dev-update_transaction",
+      "Parameters": {
+        "id.$": "$.transaction-id",
+        "status": "done",
+        "message": "loan-has-multiple-applications-error"
+      },
+      "ResultPath": "$.status-update",
+      "Next": "transaction-status-fail-6"
+    },
+    "on-borrower-verification-waterfall": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::sns:publish",
+      "Parameters": {
+        "TopicArn": "arn:aws:sns:us-east-1:609131769936:event-horizon-client-dev",
+        "Message": {
+          "Input": {
+            "app": "verification-api",
+            "device-id.$": "$.transaction-id",
+            "loan-number.$": "$.input.loan-id",
+            "event": "borrower-verification-waterfall"
+          }
+        }
+      },
+      "ResultPath": "$.event-horizon-result",
+      "Next": "all-borrowers-parallel-orders"
+    },
+    "on-loan-has-multiple-applications-choice": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::sns:publish",
+      "Parameters": {
+        "TopicArn": "arn:aws:sns:us-east-1:609131769936:event-horizon-client-dev",
+        "Message": {
+          "Input": {
+            "app": "verification-api",
+            "device-id.$": "$.transaction-id",
+            "loan-number.$": "$.input.loan-id",
+            "event": "loan-has-multiple-applications-choice",
+            "data": {
+              "loan-has-multiple-applications.$": "$.loan-has-multiple-applications"
+            }
+          }
+        }
+      },
+      "ResultPath": "$.event-horizon-result",
+      "Next": "loan-has-multiple-applications-choice"
+    },
+    "confirmed-locked-loan": {
+      "Type": "Pass",
+      "Next": "transaction-status-in-progress-4"
+    },
+    "confirmed-unlocked-loan": {
+      "Type": "Pass",
+      "Next": "loan-has-multiple-applications"
+    },
+    "all-borrowers-parallel-orders": {
+      "Type": "Parallel",
+      "Branches": [
+        {
+          "StartAt": "does-borrower-0-exist",
+          "States": {
+            "on-twn-order-0-success": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::sns:publish",
+              "Parameters": {
+                "TopicArn": "arn:aws:sns:us-east-1:609131769936:event-horizon-client-dev",
+                "Message": {
+                  "Input": {
+                    "app": "verification-api",
+                    "device-id.$": "$.transaction-id",
+                    "loan-number.$": "$.input.loan-id",
+                    "event": "twn-order-success",
+                    "data": {
+                      "order-id.$": "$.twn-order.order-id"
+                    }
+                  }
+                }
+              },
+              "ResultPath": "$.event-horizon-result",
+              "End": true
+            },
+            "borrower-0-does-not-exist": {
+              "Type": "Pass",
+              "Result": {
+                "skipped": true
+              },
+              "End": true
+            },
+            "twn-order-0": {
+              "Type": "Task",
+              "Resource": "arn:aws:lambda:us-east-1:609131769936:function:verification-api-dev-post_twn_order",
+              "Parameters": {
+                "transaction-id.$": "$.transaction-id",
+                "loan-id.$": "$.input.loan-id",
+                "order-type.$": "$.input.borrowers[0].order-type",
+                "first-name.$": "$.input.borrowers[0].first-name",
+                "last-name.$": "$.input.borrowers[0].last-name",
+                "ssn.$": "$.input.borrowers[0].ssn"
+              },
+              "ResultPath": "$.twn-order",
+              "Next": "twn-order-0-success",
+              "Catch": [
+                {
+                  "ErrorEquals": [
+                    "States.ALL"
+                  ],
+                  "ResultPath": "$.error-info",
+                  "Next": "pointserv-order-0"
+                }
+              ]
+            },
+            "on-borrower-0-all-orders-error": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::sns:publish",
+              "Parameters": {
+                "TopicArn": "arn:aws:sns:us-east-1:609131769936:event-horizon-client-dev",
+                "Message": {
+                  "Input": {
+                    "app": "verification-api",
+                    "device-id.$": "$.transaction-id",
+                    "loan-number.$": "$.input.loan-id",
+                    "event": "borrower-0-all-orders-error",
+                    "data": {
+                      "error.$": "$.error-info.Error",
+                      "cause.$": "$.error-info.Cause"
+                    }
+                  }
+                }
+              },
+              "ResultPath": "$.event-horizon-result",
+              "Next": "transaction-status-done-10"
+            },
+            "pointserv-order-0": {
+              "Type": "Task",
+              "Resource": "arn:aws:lambda:us-east-1:609131769936:function:verification-api-dev-post_pointserv_order",
+              "Parameters": {
+                "transaction-id.$": "$.transaction-id",
+                "loan-id.$": "$.input.loan-id",
+                "order-type.$": "$.input.borrowers[0].order-type",
+                "first-name.$": "$.input.borrowers[0].first-name",
+                "last-name.$": "$.input.borrowers[0].last-name",
+                "ssn.$": "$.input.borrowers[0].ssn"
+              },
+              "ResultPath": "$.pointserv-order",
+              "Next": "pointserv-order-0-success",
+              "Catch": [
+                {
+                  "ErrorEquals": [
+                    "States.ALL"
+                  ],
+                  "ResultPath": "$.error-info",
+                  "Next": "on-borrower-0-all-orders-error"
+                }
+              ]
+            },
+            "twn-order-0-success": {
+              "Type": "Pass",
+              "Next": "on-twn-order-0-success"
+            },
+            "pointserv-order-0-success": {
+              "Type": "Pass",
+              "Next": "on-pointserv-order-0-success"
+            },
+            "transaction-status-done-10": {
+              "Type": "Task",
+              "Resource": "arn:aws:lambda:us-east-1:609131769936:function:transaction-dev-update_transaction",
+              "Parameters": {
+                "id.$": "$.transaction-id",
+                "status": "done",
+                "message": "borrower-0-all-orders-error"
+              },
+              "ResultPath": "$.status-update",
+              "Next": "transaction-status-fail-11"
+            },
+            "transaction-status-fail-11": {
+              "Type": "Fail",
+              "Cause": "error"
+            },
+            "on-pointserv-order-0-success": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::sns:publish",
+              "Parameters": {
+                "TopicArn": "arn:aws:sns:us-east-1:609131769936:event-horizon-client-dev",
+                "Message": {
+                  "Input": {
+                    "app": "verification-api",
+                    "device-id.$": "$.transaction-id",
+                    "loan-number.$": "$.input.loan-id",
+                    "event": "pointserv-order-success",
+                    "data": {
+                      "order-id.$": "$.pointserv-order.order-id"
+                    }
+                  }
+                }
+              },
+              "ResultPath": "$.event-horizon-result",
+              "End": true
+            },
+            "does-borrower-0-exist": {
+              "Type": "Choice",
+              "Choices": [
+                {
+                  "Not": {
+                    "Variable": "$.input.borrowers[0]",
+                    "BooleanEquals": false
+                  },
+                  "Next": "twn-order-0"
+                }
+              ],
+              "Default": "borrower-0-does-not-exist"
+            }
+          }
+        },
+        {
+          "StartAt": "does-borrower-1-exist",
+          "States": {
+            "transaction-status-done-12": {
+              "Type": "Task",
+              "Resource": "arn:aws:lambda:us-east-1:609131769936:function:transaction-dev-update_transaction",
+              "Parameters": {
+                "id.$": "$.transaction-id",
+                "status": "done",
+                "message": "borrower-1-all-orders-error"
+              },
+              "ResultPath": "$.status-update",
+              "Next": "transaction-status-fail-13"
+            },
+            "borrower-1-does-not-exist": {
+              "Type": "Pass",
+              "Result": {
+                "skipped": true
+              },
+              "End": true
+            },
+            "on-twn-order-1-success": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::sns:publish",
+              "Parameters": {
+                "TopicArn": "arn:aws:sns:us-east-1:609131769936:event-horizon-client-dev",
+                "Message": {
+                  "Input": {
+                    "app": "verification-api",
+                    "device-id.$": "$.transaction-id",
+                    "loan-number.$": "$.input.loan-id",
+                    "event": "twn-order-success",
+                    "data": {
+                      "order-id.$": "$.twn-order.order-id"
+                    }
+                  }
+                }
+              },
+              "ResultPath": "$.event-horizon-result",
+              "End": true
+            },
+            "pointserv-order-1": {
+              "Type": "Task",
+              "Resource": "arn:aws:lambda:us-east-1:609131769936:function:verification-api-dev-post_pointserv_order",
+              "Parameters": {
+                "transaction-id.$": "$.transaction-id",
+                "loan-id.$": "$.input.loan-id",
+                "order-type.$": "$.input.borrowers[1].order-type",
+                "first-name.$": "$.input.borrowers[1].first-name",
+                "last-name.$": "$.input.borrowers[1].last-name",
+                "ssn.$": "$.input.borrowers[1].ssn"
+              },
+              "ResultPath": "$.pointserv-order",
+              "Next": "pointserv-order-1-success",
+              "Catch": [
+                {
+                  "ErrorEquals": [
+                    "States.ALL"
+                  ],
+                  "ResultPath": "$.error-info",
+                  "Next": "on-borrower-1-all-orders-error"
+                }
+              ]
+            },
+            "does-borrower-1-exist": {
+              "Type": "Choice",
+              "Choices": [
+                {
+                  "Not": {
+                    "Variable": "$.input.borrowers[1]",
+                    "BooleanEquals": false
+                  },
+                  "Next": "twn-order-1"
+                }
+              ],
+              "Default": "borrower-1-does-not-exist"
+            },
+            "twn-order-1": {
+              "Type": "Task",
+              "Resource": "arn:aws:lambda:us-east-1:609131769936:function:verification-api-dev-post_twn_order",
+              "Parameters": {
+                "transaction-id.$": "$.transaction-id",
+                "loan-id.$": "$.input.loan-id",
+                "order-type.$": "$.input.borrowers[1].order-type",
+                "first-name.$": "$.input.borrowers[1].first-name",
+                "last-name.$": "$.input.borrowers[1].last-name",
+                "ssn.$": "$.input.borrowers[1].ssn"
+              },
+              "ResultPath": "$.twn-order",
+              "Next": "twn-order-1-success",
+              "Catch": [
+                {
+                  "ErrorEquals": [
+                    "States.ALL"
+                  ],
+                  "ResultPath": "$.error-info",
+                  "Next": "pointserv-order-1"
+                }
+              ]
+            },
+            "transaction-status-fail-13": {
+              "Type": "Fail",
+              "Cause": "error"
+            },
+            "on-pointserv-order-1-success": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::sns:publish",
+              "Parameters": {
+                "TopicArn": "arn:aws:sns:us-east-1:609131769936:event-horizon-client-dev",
+                "Message": {
+                  "Input": {
+                    "app": "verification-api",
+                    "device-id.$": "$.transaction-id",
+                    "loan-number.$": "$.input.loan-id",
+                    "event": "pointserv-order-success",
+                    "data": {
+                      "order-id.$": "$.pointserv-order.order-id"
+                    }
+                  }
+                }
+              },
+              "ResultPath": "$.event-horizon-result",
+              "End": true
+            },
+            "twn-order-1-success": {
+              "Type": "Pass",
+              "Next": "on-twn-order-1-success"
+            },
+            "pointserv-order-1-success": {
+              "Type": "Pass",
+              "Next": "on-pointserv-order-1-success"
+            },
+            "on-borrower-1-all-orders-error": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::sns:publish",
+              "Parameters": {
+                "TopicArn": "arn:aws:sns:us-east-1:609131769936:event-horizon-client-dev",
+                "Message": {
+                  "Input": {
+                    "app": "verification-api",
+                    "device-id.$": "$.transaction-id",
+                    "loan-number.$": "$.input.loan-id",
+                    "event": "borrower-1-all-orders-error",
+                    "data": {
+                      "error.$": "$.error-info.Error",
+                      "cause.$": "$.error-info.Cause"
+                    }
+                  }
+                }
+              },
+              "ResultPath": "$.event-horizon-result",
+              "Next": "transaction-status-done-12"
+            }
+          }
+        }
+      ],
+      "ResultPath": "$.verification-orders",
+      "Next": "transaction-status-in-progress-14"
+    },
+    "loan-has-multiple-applications": {
+      "Type": "Task",
+      "Resource": "arn:aws:lambda:us-east-1:609131769936:function:verification-api-dev-loan_has_multiple_applications",
+      "Parameters": {
+        "loan-id.$": "$.input.loan-id"
+      },
+      "ResultPath": "$.loan-has-multiple-applications",
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "ResultPath": "$.error-info",
+          "Next": "on-loan-has-multiple-applications-error"
+        }
+      ],
+      "Next": "on-loan-has-multiple-applications-choice"
+    },
+    "on-loan-has-multiple-applications-error": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::sns:publish",
+      "Parameters": {
+        "TopicArn": "arn:aws:sns:us-east-1:609131769936:event-horizon-client-dev",
+        "Message": {
+          "Input": {
+            "app": "verification-api",
+            "device-id.$": "$.transaction-id",
+            "loan-number.$": "$.input.loan-id",
+            "event": "loan-has-multiple-applications-error",
+            "data": {
+              "error.$": "$.error-info.Error",
+              "cause.$": "$.error-info.Cause"
+            }
+          }
+        }
+      },
+      "ResultPath": "$.event-horizon-result",
+      "Next": "transaction-status-done-5"
+    },
+    "on-transaction-started": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::sns:publish",
+      "Parameters": {
+        "TopicArn": "arn:aws:sns:us-east-1:609131769936:event-horizon-client-dev",
+        "Message": {
+          "Input": {
+            "app": "verification-api",
+            "device-id.$": "$.transaction-id",
+            "loan-number.$": "$.input.loan-id",
+            "event": "transaction-started"
+          }
+        }
+      },
+      "ResultPath": "$.event-horizon-result",
+      "Next": "loan-is-locked"
+    },
+    "can-run-encompass-update": {
+      "Type": "Task",
+      "Resource": "arn:aws:lambda:us-east-1:609131769936:function:verification-api-dev-can_run_encompass_update",
+      "Parameters": {
+        "loan-id.$": "$.input.loan-id"
+      },
+      "ResultPath": "$.can-run-encompass-update",
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "ResultPath": "$.error-info",
+          "Next": "on-can-run-encompass-update-error"
+        }
+      ],
+      "Next": "on-can-run-encompass-update-choice"
+    }
+  },
+  "Version": "1.0",
+  "Comment": "Processing VoE-VoI Transactions with style"
+}
