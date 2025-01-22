@@ -1,0 +1,13 @@
+src/lib/*.svelte
+src/lib/*.js
+src/lib/**/*.svelte
+src/lib/**/*.js
+src/*.svelte
+src/*.css
+src/*.js
+test/example.test.js
+README.md
+index.html
+jsconfig.json
+*.config.js
+package.json
